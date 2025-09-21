@@ -6,7 +6,7 @@ import {
   ReactiveFormsModule
 } from '@angular/forms';
 import { Component, inject, OnInit } from '@angular/core';
-import { DatePipe, CurrencyPipe, formatDate } from '@angular/common';
+import { CommonModule, DatePipe, AsyncPipe } from '@angular/common'; // 添加 CommonModule 和 AsyncPipe
 import { NgbDatepickerModule, NgbDateStruct, NgbDropdownModule } from '@ng-bootstrap/ng-bootstrap';
 import { NgxDatatableModule } from '@swimlane/ngx-datatable';
 import {
@@ -24,12 +24,15 @@ import {
   ModalCloseDirective,
   ModalComponent
 } from '@abp/ng.theme.shared';
-import { BookService, BookDto, bookTypeOptions } from '../proxy/books';
+import { BookService, BookDto, bookTypeOptions, AuthorLookupDto, CreateUpdateBookDto } from '../proxy/books';
+import { Observable } from 'rxjs';
+import { map } from 'rxjs/operators';
 
 @Component({
   selector: 'app-book',
   templateUrl: './book.component.html',
   imports: [
+    CommonModule,          // 添加这个 - 支持 @for 等控制流语法
     FormsModule,
     ReactiveFormsModule,
     NgbDatepickerModule,
@@ -43,7 +46,7 @@ import { BookService, BookDto, bookTypeOptions } from '../proxy/books';
     ModalCloseDirective,
     LocalizationPipe,
     DatePipe,
-    CurrencyPipe
+    AsyncPipe              // 添加这个 - 支持 async 管道
   ],
   providers: [ListService],
 })
@@ -54,10 +57,20 @@ export class BookComponent implements OnInit {
   private confirmation = inject(ConfirmationService);
 
   book = { items: [], totalCount: 0 } as PagedResultDto<BookDto>;
-  selectedBook = {} as BookDto; // declare selectedBook
+  selectedBook = {} as BookDto;
   form: FormGroup;
   bookTypes = bookTypeOptions;
   isModalOpen = false;
+  
+  authors$: Observable<AuthorLookupDto[]>;
+
+  constructor() {
+    this.authors$ = this.bookService.getAuthorLookup().pipe(
+      map((response) => response.items || [])
+    );
+    
+    this.buildForm();
+  }
 
   ngOnInit() {
     const bookStreamCreator = query => this.bookService.getList(query);
@@ -81,16 +94,9 @@ export class BookComponent implements OnInit {
     });
   }
 
-  delete(id: string) {
-    this.confirmation.warn('::AreYouSureToDelete', '::AreYouSure').subscribe(status => {
-      if (status === Confirmation.Status.confirm) {
-        this.bookService.delete(id).subscribe(() => this.list.get());
-      }
-    });
-  }
-
   buildForm() {
     this.form = this.fb.group({
+      authorId: [this.selectedBook.authorId || null, Validators.required],
       name: [this.selectedBook.name || '', Validators.required],
       type: [this.selectedBook.type || null, Validators.required],
       publishDate: [
@@ -107,7 +113,7 @@ export class BookComponent implements OnInit {
     }
 
     const formValue = this.form.value;
-    const requestData = {
+    const requestData: CreateUpdateBookDto = {
       ...formValue,
       publishDate: this.formatDate(formValue.publishDate),
     };
@@ -121,6 +127,14 @@ export class BookComponent implements OnInit {
       this.isModalOpen = false;
       this.form.reset();
       this.list.get();
+    });
+  }
+
+  delete(id: string) {
+    this.confirmation.warn('::AreYouSureToDelete', '::AreYouSure').subscribe(status => {
+      if (status === Confirmation.Status.confirm) {
+        this.bookService.delete(id).subscribe(() => this.list.get());
+      }
     });
   }
 
@@ -147,6 +161,6 @@ export class BookComponent implements OnInit {
     }
 
     const date = new Date(dateStruct.year, dateStruct.month - 1, dateStruct.day);
-    return formatDate(date, 'yyyy-MM-dd', 'en');
+    return date.toISOString().split('T')[0];
   }
 }

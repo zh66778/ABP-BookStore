@@ -17,6 +17,17 @@ public class BookStorePermissionDefinitionProvider : PermissionDefinitionProvide
         booksPermission.AddChild(BookStorePermissions.Books.Delete, L("Permission:Books.Delete"));
         //Define your own permissions here. Example:
         //myGroup.AddPermission(BookStorePermissions.MyPermission1, L("Permission:MyPermission1"));
+
+        // 修复：将 bookStoreGroup 改为 myGroup
+        var authorsPermission = myGroup.AddPermission(
+    BookStorePermissions.Authors.Default, L("Permission:Authors"));
+        authorsPermission.AddChild(
+            BookStorePermissions.Authors.Create, L("Permission:Authors.Create"));
+        authorsPermission.AddChild(
+            BookStorePermissions.Authors.Edit, L("Permission:Authors.Edit"));
+        authorsPermission.AddChild(
+            BookStorePermissions.Authors.Delete, L("Permission:Authors.Delete"));
+
     }
 
     private static LocalizableString L(string name)

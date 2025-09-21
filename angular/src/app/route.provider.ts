@@ -20,9 +20,24 @@ function configureRoutes() {
       {
         path: '/books',
         name: '::Menu:Books',
+        parentName: '::Menu:BookStore',
         iconClass: 'fas fa-book',
         layout: eLayoutType.application,
         requiredPolicy: 'BookStore.Books',
+      },
+      {
+        path: '/authors',
+        name: '::Menu:Authors',
+        parentName: '::Menu:BookStore',
+        layout: eLayoutType.application,
+        requiredPolicy: 'BookStore.Authors',
+      },
+      {
+        name: '::Menu:BookStore',
+        iconClass: 'fas fa-book',
+        order: 2,
+        layout: eLayoutType.application,
+        requiredPolicy: 'BookStore.Books || BookStore.Authors',
       },
   ]);
 }

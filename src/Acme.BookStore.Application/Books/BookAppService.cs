@@ -1,69 +1,127 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Linq.Dynamic.Core;
 using System.Threading.Tasks;
-using Microsoft.AspNetCore.Authorization;
+using Acme.BookStore.Authors;
 using Acme.BookStore.Permissions;
+using Microsoft.AspNetCore.Authorization;
 using Volo.Abp.Application.Dtos;
 using Volo.Abp.Application.Services;
+using Volo.Abp.Domain.Entities;
 using Volo.Abp.Domain.Repositories;
-using System.Linq.Dynamic.Core;
 
 namespace Acme.BookStore.Books;
 
 [Authorize(BookStorePermissions.Books.Default)]
-public class BookAppService : ApplicationService, IBookAppService
+public class BookAppService :
+    CrudAppService<
+        Book, //The Book entity
+        BookDto, //Used to show books
+        Guid, //Primary key of the book entity
+        PagedAndSortedResultRequestDto, //Used for paging/sorting
+        CreateUpdateBookDto>, //Used to create/update a book
+    IBookAppService //implement the IBookAppService
 {
-    private readonly IRepository<Book, Guid> _repository;
+    private readonly IAuthorRepository _authorRepository;
 
-    public BookAppService(IRepository<Book, Guid> repository)
+    public BookAppService(
+        IRepository<Book, Guid> repository,
+        IAuthorRepository authorRepository)
+        : base(repository)
     {
-        _repository = repository;
+        _authorRepository = authorRepository;
+        GetPolicyName = BookStorePermissions.Books.Default;
+        GetListPolicyName = BookStorePermissions.Books.Default;
+        CreatePolicyName = BookStorePermissions.Books.Create;
+        UpdatePolicyName = BookStorePermissions.Books.Edit;
+        DeletePolicyName = BookStorePermissions.Books.Delete;
     }
 
-    public async Task<BookDto> GetAsync(Guid id)
+    public override async Task<BookDto> GetAsync(Guid id)
     {
-        var book = await _repository.GetAsync(id);
-        return ObjectMapper.Map<Book, BookDto>(book);
+        //Get the IQueryable<Book> from the repository
+        var queryable = await Repository.GetQueryableAsync();
+
+        //Prepare a query to join books and authors
+        var query = from book in queryable
+                    join author in await _authorRepository.GetQueryableAsync() on book.AuthorId equals author.Id
+                    where book.Id == id
+                    select new { book, author };
+
+        //Execute the query and get the book with author
+        var queryResult = await AsyncExecuter.FirstOrDefaultAsync(query);
+        if (queryResult == null)
+        {
+            throw new EntityNotFoundException(typeof(Book), id);
+        }
+
+        var bookDto = ObjectMapper.Map<Book, BookDto>(queryResult.book);
+        bookDto.AuthorName = queryResult.author.Name;
+        return bookDto;
     }
 
-    public async Task<PagedResultDto<BookDto>> GetListAsync(PagedAndSortedResultRequestDto input)
+    public override async Task<PagedResultDto<BookDto>> GetListAsync(PagedAndSortedResultRequestDto input)
     {
-        var queryable = await _repository.GetQueryableAsync();
-        var query = queryable
-            .OrderBy(input.Sorting.IsNullOrWhiteSpace() ? "Name" : input.Sorting)
+        //Get the IQueryable<Book> from the repository
+        var queryable = await Repository.GetQueryableAsync();
+
+        //Prepare a query to join books and authors
+        var query = from book in queryable
+                    join author in await _authorRepository.GetQueryableAsync() on book.AuthorId equals author.Id
+                    select new { book, author };
+
+        //Paging
+        query = query
+            .OrderBy(NormalizeSorting(input.Sorting))
             .Skip(input.SkipCount)
             .Take(input.MaxResultCount);
 
-        var books = await AsyncExecuter.ToListAsync(query);
-        var totalCount = await AsyncExecuter.CountAsync(queryable);
+        //Execute the query and get a list
+        var queryResult = await AsyncExecuter.ToListAsync(query);
+
+        //Convert the query result to a list of BookDto objects
+        var bookDtos = queryResult.Select(x =>
+        {
+            var bookDto = ObjectMapper.Map<Book, BookDto>(x.book);
+            bookDto.AuthorName = x.author.Name;
+            return bookDto;
+        }).ToList();
+
+        //Get the total count with another query
+        var totalCount = await Repository.GetCountAsync();
 
         return new PagedResultDto<BookDto>(
             totalCount,
-            ObjectMapper.Map<List<Book>, List<BookDto>>(books)
+            bookDtos
         );
     }
 
-    [Authorize(BookStorePermissions.Books.Create)]
-    public async Task<BookDto> CreateAsync(CreateUpdateBookDto input)
+    public async Task<ListResultDto<AuthorLookupDto>> GetAuthorLookupAsync()
     {
-        var book = ObjectMapper.Map<CreateUpdateBookDto, Book>(input);
-        await _repository.InsertAsync(book);
-        return ObjectMapper.Map<Book, BookDto>(book);
+        var authors = await _authorRepository.GetListAsync();
+
+        return new ListResultDto<AuthorLookupDto>(
+            ObjectMapper.Map<List<Author>, List<AuthorLookupDto>>(authors)
+        );
     }
 
-    [Authorize(BookStorePermissions.Books.Edit)]
-    public async Task<BookDto> UpdateAsync(Guid id, CreateUpdateBookDto input)
+    private static string NormalizeSorting(string sorting)
     {
-        var book = await _repository.GetAsync(id);
-        ObjectMapper.Map(input, book);
-        await _repository.UpdateAsync(book);
-        return ObjectMapper.Map<Book, BookDto>(book);
-    }
+        if (sorting.IsNullOrEmpty())
+        {
+            return $"book.{nameof(Book.Name)}";
+        }
 
-    [Authorize(BookStorePermissions.Books.Delete)]
-    public async Task DeleteAsync(Guid id)
-    {
-        await _repository.DeleteAsync(id);
+        if (sorting.Contains("authorName", StringComparison.OrdinalIgnoreCase))
+        {
+            return sorting.Replace(
+                "authorName",
+                "author.Name",
+                StringComparison.OrdinalIgnoreCase
+            );
+        }
+
+        return $"book.{sorting}";
     }
 }

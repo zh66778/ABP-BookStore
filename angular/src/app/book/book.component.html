@@ -59,6 +59,7 @@
         </ng-template>
       </ngx-datatable-column>
       <ngx-datatable-column [name]="'::Name' | abpLocalization" prop="name"></ngx-datatable-column>
+      <ngx-datatable-column [name]="'::Author' | abpLocalization" prop="authorName" [sortable]="false"></ngx-datatable-column>
       <ngx-datatable-column [name]="'::Type' | abpLocalization" prop="type">
         <ng-template let-row="row" ngx-datatable-cell-template>
           {{ '::Enum:BookType.' + row.type | abpLocalization }}
@@ -89,6 +90,17 @@
       <div class="mt-2">
         <label for="book-name">Name</label><span> * </span>
         <input type="text" id="book-name" class="form-control" formControlName="name" autofocus />
+      </div>
+
+      <!-- 添加作者选择字段 -->
+      <div class="mt-2">
+        <label for="book-author">{{ '::Author' | abpLocalization }}</label><span> * </span>
+        <select class="form-control" id="book-author" formControlName="authorId">
+          <option [ngValue]="null">{{ '::SelectAuthor' | abpLocalization }}</option>
+          @for(author of authors$ | async; track author.id){
+          <option [ngValue]="author.id">{{ author.name }}</option>
+          }
+        </select>
       </div>
 
       <div class="mt-2">
